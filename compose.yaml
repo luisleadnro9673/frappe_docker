@@ -1,8 +1,13 @@
 x-customizable-image: &customizable_image
-  # By default the image used only contains the `frappe` and `erpnext` apps.
-  # See https://github.com/frappe/frappe_docker/blob/main/docs/custom-apps.md
-  # about using custom images.
-  image: ${CUSTOM_IMAGE:-frappe/erpnext}:${CUSTOM_TAG:-$ERPNEXT_VERSION}
+  # Construye la imagen usando tus repositorios y apps.json codificado en Base64
+  build:
+    context: .
+    dockerfile: images/custom/Containerfile
+    args:
+      FRAPPE_PATH: https://github.com/frappe/frappe
+      FRAPPE_BRANCH: version-15
+      APPS_JSON_BASE64: ${APPS_JSON_BASE64}
+  image: ${CUSTOM_IMAGE:-ghcr.io/luisleadnro9673/erpnext-custom}:${CUSTOM_TAG:-1.0.0}
   pull_policy: ${PULL_POLICY:-always}
   restart: ${RESTART_POLICY:-unless-stopped}
 
@@ -23,15 +28,14 @@ services:
     entrypoint:
       - bash
       - -c
-    # add redis_socketio for backward compatibility
     command:
-      - >
-        ls -1 apps > sites/apps.txt;
-        bench set-config -g db_host $$DB_HOST;
-        bench set-config -gp db_port $$DB_PORT;
-        bench set-config -g redis_cache "redis://$$REDIS_CACHE";
-        bench set-config -g redis_queue "redis://$$REDIS_QUEUE";
-        bench set-config -g redis_socketio "redis://$$REDIS_QUEUE";
+      - |
+        ls -1 apps > sites/apps.txt; \
+        bench set-config -g db_host $$DB_HOST; \
+        bench set-config -gp db_port $$DB_PORT; \
+        bench set-config -g redis_cache "redis://$$REDIS_CACHE"; \
+        bench set-config -g redis_queue "redis://$$REDIS_QUEUE"; \
+        bench set-config -g redis_socketio "redis://$$REDIS_QUEUE"; \
         bench set-config -gp socketio_port $$SOCKETIO_PORT;
     environment:
       DB_HOST: ${DB_HOST:-}
@@ -90,6 +94,5 @@ services:
     platform: linux/amd64
     command: bench schedule
 
-# ERPNext requires local assets access (Frappe does not)
 volumes:
   sites:
