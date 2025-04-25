@@ -1,5 +1,4 @@
 x-customizable-image: &customizable_image
-  # Construye la imagen usando tus repositorios y apps.json codificado en Base64
   build:
     context: .
     dockerfile: images/custom/Containerfile
@@ -25,18 +24,15 @@ services:
   configurator:
     <<: *backend_defaults
     platform: linux/amd64
-    entrypoint:
-      - bash
-      - -c
-    command:
-      - |
-        ls -1 apps > sites/apps.txt; \
-        bench set-config -g db_host $$DB_HOST; \
-        bench set-config -gp db_port $$DB_PORT; \
-        bench set-config -g redis_cache "redis://$$REDIS_CACHE"; \
-        bench set-config -g redis_queue "redis://$$REDIS_QUEUE"; \
-        bench set-config -g redis_socketio "redis://$$REDIS_QUEUE"; \
-        bench set-config -gp socketio_port $$SOCKETIO_PORT;
+    entrypoint: ["bash", "-c"]
+    command: >
+      ls -1 apps > sites/apps.txt;
+      bench set-config -g db_host $${DB_HOST};
+      bench set-config -gp db_port $${DB_PORT};
+      bench set-config -g redis_cache "redis://$${REDIS_CACHE}";
+      bench set-config -g redis_queue "redis://$${REDIS_QUEUE}";
+      bench set-config -g redis_socketio "redis://$${REDIS_QUEUE}";
+      bench set-config -gp socketio_port $${SOCKETIO_PORT};
     environment:
       DB_HOST: ${DB_HOST:-}
       DB_PORT: ${DB_PORT:-}
@@ -46,6 +42,41 @@ services:
     depends_on: {}
     restart: on-failure
 
+  create-site:
+    <<: *customizable_image
+    deploy:
+      mode: replicated
+      replicas: ${CREATE_SITE:-1}
+      restart_policy:
+        condition: none
+    entrypoint: ["bash", "-c"]
+    command: >
+      bench new-site ${SITE_NAME} --admin-password $${ADMIN_PASSWORD} --db-root-password $${DB_ROOT_PASSWORD};
+    environment:
+      SITE_NAME: ${SITE_NAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-3306}
+      INSTALL_APP_ARGS: ${INSTALL_APP_ARGS:-}
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+
+  migration:
+    <<: *customizable_image
+    deploy:
+      mode: replicated
+      replicas: ${MIGRATE:-1}
+      restart_policy:
+        condition: none
+    entrypoint: ["bash", "-c"]
+    command: >
+      bench --site all set-config -p maintenance_mode 1 &&
+      bench --site all migrate &&
+      bench --site all set-config -p maintenance_mode 0;
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+
   backend:
     <<: *backend_defaults
     platform: linux/amd64
@@ -53,12 +84,11 @@ services:
   frontend:
     <<: *customizable_image
     platform: linux/amd64
-    command:
-      - nginx-entrypoint.sh
+    command: ["nginx-entrypoint.sh"]
     environment:
       BACKEND: backend:8000
       SOCKETIO: websocket:9000
-      FRAPPE_SITE_NAME_HEADER: ${FRAPPE_SITE_NAME_HEADER:-$$host}
+      FRAPPE_SITE_NAME_HEADER: ${FRAPPE_SITE_NAME_HEADER:-admin.allvende.shop}
       UPSTREAM_REAL_IP_ADDRESS: ${UPSTREAM_REAL_IP_ADDRESS:-127.0.0.1}
       UPSTREAM_REAL_IP_HEADER: ${UPSTREAM_REAL_IP_HEADER:-X-Forwarded-For}
       UPSTREAM_REAL_IP_RECURSIVE: ${UPSTREAM_REAL_IP_RECURSIVE:-off}
@@ -73,26 +103,24 @@ services:
   websocket:
     <<: [*depends_on_configurator, *customizable_image]
     platform: linux/amd64
-    command:
-      - node
-      - /home/frappe/frappe-bench/apps/frappe/socketio.js
+    command: ["node", "/home/frappe/frappe-bench/apps/frappe/socketio.js"]
     volumes:
       - sites:/home/frappe/frappe-bench/sites
 
   queue-short:
     <<: *backend_defaults
     platform: linux/amd64
-    command: bench worker --queue short,default
+    command: ["bench", "worker", "--queue", "short,default"]
 
   queue-long:
     <<: *backend_defaults
     platform: linux/amd64
-    command: bench worker --queue long,default,short
+    command: ["bench", "worker", "--queue", "long,default,short"]
 
   scheduler:
     <<: *backend_defaults
     platform: linux/amd64
-    command: bench schedule
+    command: ["bench", "schedule"]
 
 volumes:
   sites:
