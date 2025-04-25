@@ -1,52 +1,26 @@
 services:
   configurator:
     environment:
-      REDIS_CACHE: redis-cache:6379
-      REDIS_QUEUE: redis-queue:6379
-      REDIS_SOCKETIO: redis-socketio:6379
+      DB_HOST: db
+      DB_PORT: 3306
     depends_on:
-      redis-cache:
-        condition: service_healthy
-      redis-queue:
-        condition: service_healthy
-      redis-socketio:
+      db:
         condition: service_healthy
 
-  redis-cache:
-    image: redis:6.2-alpine
-    volumes:
-      - redis-cache-data:/data
+  db:
+    image: mariadb:10.6
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 3
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "--password=${DB_ROOT_PASSWORD}"]
+      interval: 1s
+      retries: 20
     restart: unless-stopped
-
-  redis-queue:
-    image: redis:6.2-alpine
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
     volumes:
-      - redis-queue-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 3
-    restart: unless-stopped
-
-  redis-socketio:
-    image: redis:6.2-alpine
-    volumes:
-      - redis-socketio-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 3
-    restart: unless-stopped
+      - db-data:/var/lib/mysql
 
 volumes:
-  redis-cache-data:
-  redis-queue-data:
-  redis-socketio-data:
-
+  db-data:
